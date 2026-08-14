@@ -1,0 +1,445 @@
+{
+  "properties": {
+    "connectionReferences": {
+      "shared_powerplatformforadmins-1": {
+        "api": {
+          "name": "shared_powerplatformforadmins"
+        },
+        "connection": {
+          "connectionReferenceLogicalName": "ccg_sharedpowerplatformforadmins_21278"
+        },
+        "runtimeSource": "embedded"
+      },
+      "shared_webcontents": {
+        "api": {
+          "name": "shared_webcontents"
+        },
+        "connection": {
+          "connectionReferenceLogicalName": "ccg_sharedwebcontents_04cb6"
+        },
+        "runtimeSource": "embedded"
+      },
+      "shared_office365users-1": {
+        "api": {
+          "name": "shared_office365users"
+        },
+        "connection": {
+          "connectionReferenceLogicalName": "ccg_sharedoffice365users_47605"
+        },
+        "runtimeSource": "embedded"
+      },
+      "shared_commondataserviceforapps-1": {
+        "api": {
+          "name": "shared_commondataserviceforapps"
+        },
+        "connection": {
+          "connectionReferenceLogicalName": "ccg_sharedcommondataserviceforapps_a992e"
+        },
+        "runtimeSource": "embedded"
+      },
+      "shared_office365-1": {
+        "api": {
+          "name": "shared_office365"
+        },
+        "connection": {
+          "connectionReferenceLogicalName": "ccg_sharedoffice365_7032c"
+        },
+        "runtimeSource": "embedded"
+      }
+    },
+    "definition": {
+      "$schema": "https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#",
+      "contentVersion": "1.0.0.0",
+      "parameters": {
+        "$authentication": {
+          "defaultValue": {},
+          "type": "SecureObject"
+        },
+        "$connections": {
+          "defaultValue": {},
+          "type": "Object"
+        }
+      },
+      "triggers": {
+        "Daily_at_03_00": {
+          "type": "Recurrence",
+          "recurrence": {
+            "frequency": "Day",
+            "interval": 1,
+            "schedule": {
+              "hours": [
+                "3"
+              ],
+              "minutes": [
+                0
+              ]
+            },
+            "timeZone": "FLE Standard Time"
+          },
+          "metadata": {
+            "operationMetadataId": "11111111-2222-4333-8444-555555555500"
+          }
+        }
+      },
+      "actions": {
+        "Initialise_alert_count": {
+          "type": "InitializeVariable",
+          "inputs": {
+            "variables": [
+              {
+                "name": "AlertsSent",
+                "type": "integer",
+                "value": 0
+              }
+            ]
+          },
+          "runAfter": {},
+          "metadata": {
+            "operationMetadataId": "11111111-2222-4333-8444-555555555560"
+          }
+        },
+        "List_Environments_as_Admin": {
+          "type": "OpenApiConnection",
+          "inputs": {
+            "parameters": {
+              "api-version": "2018-10-01"
+            },
+            "host": {
+              "apiId": "/providers/Microsoft.PowerApps/apis/shared_powerplatformforadmins",
+              "operationId": "Get-AdminEnvironment",
+              "connectionName": "shared_powerplatformforadmins-1"
+            }
+          },
+          "runAfter": {
+            "Initialise_alert_count": [
+              "Succeeded"
+            ]
+          },
+          "metadata": {
+            "operationMetadataId": "11111111-2222-4333-8444-555555555561"
+          }
+        },
+        "Query_agent_inventory": {
+          "type": "OpenApiConnection",
+          "inputs": {
+            "parameters": {
+              "request/method": "POST",
+              "request/url": "https://api.powerplatform.com/resourcequery/resources/query?api-version=2024-10-01",
+              "request/headers": {
+                "Content-Type": "application/json"
+              },
+              "request/body": "{\"TableName\":\"PowerPlatformResources\",\"Clauses\":[{\"$type\":\"where\",\"FieldName\":\"type\",\"Operator\":\"==\",\"Values\":[\"'microsoft.copilotstudio/agents'\"]},{\"$type\":\"project\",\"FieldList\":[\"name\",\"displayName = tostring(properties.displayName)\",\"environmentId = tostring(properties.environmentId)\",\"ownerId = tostring(properties.ownerId)\",\"isCLIAgent = tostring(properties.isCLIAgent)\"]},{\"$type\":\"take\",\"TakeCount\":500}]}"
+            },
+            "host": {
+              "apiId": "/providers/Microsoft.PowerApps/apis/shared_webcontents",
+              "operationId": "InvokeHttp",
+              "connectionName": "shared_webcontents"
+            }
+          },
+          "runAfter": {
+            "List_Environments_as_Admin": [
+              "Succeeded"
+            ]
+          },
+          "metadata": {
+            "operationMetadataId": "11111111-2222-4333-8444-555555555562"
+          }
+        },
+        "For_each_environment": {
+          "type": "Foreach",
+          "foreach": "@body('List_Environments_as_Admin')?['value']",
+          "actions": {
+            "Get_entitlements": {
+              "type": "OpenApiConnection",
+              "inputs": {
+                "parameters": {
+                  "request/method": "GET",
+                  "request/url": "@{concat('https://api.powerplatform.com/licensing/environments/', items('For_each_environment')?['name'], '/entitlements?api-version=2024-10-01')}"
+                },
+                "host": {
+                  "apiId": "/providers/Microsoft.PowerApps/apis/shared_webcontents",
+                  "operationId": "InvokeHttp",
+                  "connectionName": "shared_webcontents"
+                }
+              },
+              "metadata": {
+                "operationMetadataId": "11111111-2222-4333-8444-555555555563"
+              }
+            },
+            "Filter_MCSMessages": {
+              "type": "Query",
+              "inputs": {
+                "from": "@body('Get_entitlements')",
+                "where": "@equals(item()?['entitlementId'], 'MCSMessages')"
+              },
+              "runAfter": {
+                "Get_entitlements": [
+                  "Succeeded"
+                ]
+              },
+              "metadata": {
+                "operationMetadataId": "11111111-2222-4333-8444-555555555564"
+              }
+            },
+            "Filter_TenantPool_rule": {
+              "type": "Query",
+              "inputs": {
+                "from": "@coalesce(first(body('Filter_MCSMessages'))?['entitlement']?['capacity']?['enforcementRules'], json('[]'))",
+                "where": "@and(equals(item()?['ruleType'], 'TenantPool'), equals(item()?['enabled'], true))"
+              },
+              "runAfter": {
+                "Filter_MCSMessages": [
+                  "Succeeded"
+                ]
+              },
+              "metadata": {
+                "operationMetadataId": "11111111-2222-4333-8444-555555555565"
+              }
+            },
+            "Filter_harness_agents": {
+              "type": "Query",
+              "inputs": {
+                "from": "@coalesce(body('Query_agent_inventory')?['data'], json('[]'))",
+                "where": "@and(and(equals(toLower(item()?['environmentId']), toLower(items('For_each_environment')?['name'])), equals(item()?['isCLIAgent'], 'true')), not(equals(item()?['ownerId'], '00000000-0000-0000-0000-000000000000')))"
+              },
+              "runAfter": {
+                "Count_harness_agents": [
+                  "Succeeded"
+                ]
+              },
+              "metadata": {
+                "operationMetadataId": "11111111-2222-4333-8444-555555555567"
+              }
+            },
+            "If_approaching_limit": {
+              "type": "If",
+              "expression": {
+                "or": [
+                  {
+                    "and": [
+                      {
+                        "greater": [
+                          "@float(coalesce(first(body('Filter_MCSMessages'))?['entitlement']?['capacity']?['allocated']?['value'], 0))",
+                          0
+                        ]
+                      },
+                      {
+                        "greaterOrEquals": [
+                          "@float(coalesce(first(body('Filter_MCSMessages'))?['entitlement']?['capacity']?['consumed']?['value'], 0))",
+                          "@div(mul(float(coalesce(first(body('Filter_MCSMessages'))?['entitlement']?['capacity']?['allocated']?['value'], 0)), 8), 10)"
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "and": [
+                      {
+                        "equals": [
+                          "@float(coalesce(first(body('Filter_MCSMessages'))?['entitlement']?['capacity']?['allocated']?['value'], 0))",
+                          0
+                        ]
+                      },
+                      {
+                        "greater": [
+                          "@float(coalesce(first(body('Filter_MCSMessages'))?['entitlement']?['capacity']?['consumed']?['value'], 0))",
+                          0
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              "actions": {
+                "For_each_owner": {
+                  "type": "Foreach",
+                  "foreach": "@body('Filter_harness_agents')",
+                  "actions": {
+                    "Get_user_profile_(V2)": {
+                      "type": "OpenApiConnection",
+                      "inputs": {
+                        "parameters": {
+                          "id": "@items('For_each_owner')?['ownerId']"
+                        },
+                        "host": {
+                          "apiId": "/providers/Microsoft.PowerApps/apis/shared_office365users",
+                          "operationId": "UserProfile_V2",
+                          "connectionName": "shared_office365users-1"
+                        }
+                      },
+                      "metadata": {
+                        "operationMetadataId": "11111111-2222-4333-8444-555555555568"
+                      }
+                    },
+                    "Check_recent_alert": {
+                      "type": "OpenApiConnection",
+                      "inputs": {
+                        "parameters": {
+                          "entityName": "ccg_creditalerts",
+                          "$filter": "@{concat('ccg_agentid eq ''', items('For_each_owner')?['name'], ''' and ccg_alertdate gt ', formatDateTime(addDays(utcNow(), -7), 'yyyy-MM-ddTHH:mm:ssZ'))}",
+                          "$top": 1
+                        },
+                        "host": {
+                          "apiId": "/providers/Microsoft.PowerApps/apis/shared_commondataserviceforapps",
+                          "operationId": "ListRecords",
+                          "connectionName": "shared_commondataserviceforapps-1"
+                        }
+                      },
+                      "runAfter": {
+                        "Get_user_profile_(V2)": [
+                          "Succeeded"
+                        ]
+                      },
+                      "metadata": {
+                        "operationMetadataId": "11111111-2222-4333-8444-555555555581"
+                      }
+                    },
+                    "If_not_alerted_recently": {
+                      "type": "If",
+                      "expression": {
+                        "equals": [
+                          "@length(body('Check_recent_alert')?['value'])",
+                          0
+                        ]
+                      },
+                      "actions": {
+                        "Send_an_email_(V2)": {
+                          "type": "OpenApiConnection",
+                          "inputs": {
+                            "parameters": {
+                              "emailMessage/To": "@coalesce(body('Get_user_profile_(V2)')?['mail'], body('Get_user_profile_(V2)')?['userPrincipalName'])",
+                              "emailMessage/Subject": "@{concat('Copilot credits: ', items('For_each_environment')?['properties']?['displayName'], ' needs attention')}",
+                              "emailMessage/Body": "@{concat('<div style=\"font-family:Segoe UI,Arial,sans-serif;font-size:14px;color:#1f2328;max-width:560px\">','<p style=\"margin:0 0 16px\">An environment where you own a Copilot Studio agent is running low on credits.</p>','<table style=\"border-collapse:collapse;margin:0 0 16px;width:100%\">','<tr><td style=\"padding:6px 12px 6px 0;color:#5a5a5a;white-space:nowrap\">Environment</td><td style=\"padding:6px 0;font-weight:600\">', items('For_each_environment')?['properties']?['displayName'], '</td></tr>','<tr><td style=\"padding:6px 12px 6px 0;color:#5a5a5a\">Credits used</td><td style=\"padding:6px 0;font-weight:600\">', formatNumber(float(coalesce(first(body('Filter_MCSMessages'))?['entitlement']?['capacity']?['consumed']?['value'], 0)), '0.##'), '</td></tr>','<tr><td style=\"padding:6px 12px 6px 0;color:#5a5a5a\">Allocated</td><td style=\"padding:6px 0;font-weight:600\">', if(greater(float(coalesce(first(body('Filter_MCSMessages'))?['entitlement']?['capacity']?['allocated']?['value'], 0)), 0), formatNumber(float(coalesce(first(body('Filter_MCSMessages'))?['entitlement']?['capacity']?['allocated']?['value'], 0)), '0.##'), 'none'), '</td></tr>','<tr><td style=\"padding:6px 12px 6px 0;color:#5a5a5a\">Your agent here</td><td style=\"padding:6px 0;font-weight:600\">', items('For_each_owner')?['displayName'], '</td></tr>','</table>','<p style=\"margin:0 0 16px\">This environment ', if(greater(float(coalesce(first(body('Filter_MCSMessages'))?['entitlement']?['capacity']?['allocated']?['value'], 0)), 0), concat('has used ', formatNumber(float(coalesce(first(body('Filter_MCSMessages'))?['entitlement']?['capacity']?['consumed']?['value'], 0)), '0.##'), ' of its ', formatNumber(float(coalesce(first(body('Filter_MCSMessages'))?['entitlement']?['capacity']?['allocated']?['value'], 0)), '0.##'), ' allocated Copilot credits (', formatNumber(div(mul(float(coalesce(first(body('Filter_MCSMessages'))?['entitlement']?['capacity']?['consumed']?['value'], 0)), 100), max(float(coalesce(first(body('Filter_MCSMessages'))?['entitlement']?['capacity']?['allocated']?['value'], 0)), 1)), '0.#'), '%).'), concat('has used ', formatNumber(float(coalesce(first(body('Filter_MCSMessages'))?['entitlement']?['capacity']?['consumed']?['value'], 0)), '0.##'), ' Copilot credits and has no allocation of its own, so this consumption is drawn from capacity shared with every other environment.')), '</p>','<p style=\"margin:0 0 16px\">', if(greater(length(body('Count_harness_agents')), 1), concat('This environment has ', string(length(body('Count_harness_agents'))), ' agents on the GitHub Copilot harness. Per-agent consumption is not available from the admin API, so every owner receives this notice and it is not possible to say which agent is responsible.'), 'Yours is the only agent on the GitHub Copilot harness in this environment.'), '</p>','<p style=\"margin:0 0 16px\">Agents on the GitHub Copilot harness consume credits while they are being built, not only when they run.</p>','<p style=\"margin:0 0 16px;padding:12px 14px;background:#fdf6ec;border-left:3px solid #c9a227\"><b>What to check:</b> whether your agent still needs to be here, and whether it is being actively built or tested. If the environment runs out of credits, every agent in it stops responding. Your Power Platform administrator can allocate more.</p>','<p style=\"margin:0;color:#8a8a8a;font-size:12px\">You are receiving this because you own an agent in this environment. You will not be reminded again about this agent for seven days.</p>','</div>')}",
+                              "emailMessage/Importance": "Normal"
+                            },
+                            "host": {
+                              "apiId": "/providers/Microsoft.PowerApps/apis/shared_office365",
+                              "operationId": "SendEmailV2",
+                              "connectionName": "shared_office365-1"
+                            }
+                          },
+                          "metadata": {
+                            "operationMetadataId": "11111111-2222-4333-8444-555555555569"
+                          }
+                        },
+                        "Log_alert": {
+                          "type": "OpenApiConnection",
+                          "inputs": {
+                            "parameters": {
+                              "entityName": "ccg_creditalerts",
+                              "item/ccg_agentname": "@items('For_each_owner')?['displayName']",
+                              "item/ccg_agentid": "@items('For_each_owner')?['name']",
+                              "item/ccg_name": "@{concat(items('For_each_owner')?['displayName'], ' | ', formatDateTime(utcNow(),'yyyy-MM-dd'))}",
+                              "item/ccg_alertdate": "@utcNow()",
+                              "item/ccg_allocatedcredits": "@float(coalesce(first(body('Filter_MCSMessages'))?['entitlement']?['capacity']?['allocated']?['value'], 0))",
+                              "item/ccg_consumedcredits": "@float(coalesce(first(body('Filter_MCSMessages'))?['entitlement']?['capacity']?['consumed']?['value'], 0))",
+                              "item/ccg_environmentname": "@items('For_each_environment')?['properties']?['displayName']",
+                              "item/ccg_environmentid": "@items('For_each_environment')?['name']",
+                              "item/ccg_harnessagents": "@length(body('Count_harness_agents'))",
+                              "item/ccg_owneremail": "@coalesce(body('Get_user_profile_(V2)')?['mail'], body('Get_user_profile_(V2)')?['userPrincipalName'])",
+                              "item/ccg_ownernotified": true,
+                              "item/ccg_percentused": "@float(div(mul(float(coalesce(first(body('Filter_MCSMessages'))?['entitlement']?['capacity']?['consumed']?['value'], 0)), 100), max(float(coalesce(first(body('Filter_MCSMessages'))?['entitlement']?['capacity']?['allocated']?['value'], 0)), 1)))",
+                              "item/ccg_tenantpool": "@greater(length(body('Filter_TenantPool_rule')), 0)"
+                            },
+                            "host": {
+                              "apiId": "/providers/Microsoft.PowerApps/apis/shared_commondataserviceforapps",
+                              "operationId": "CreateRecord",
+                              "connectionName": "shared_commondataserviceforapps-1"
+                            }
+                          },
+                          "runAfter": {
+                            "Send_an_email_(V2)": [
+                              "Succeeded"
+                            ]
+                          },
+                          "metadata": {
+                            "operationMetadataId": "11111111-2222-4333-8444-555555555582"
+                          }
+                        },
+                        "Increment_alert_count": {
+                          "type": "IncrementVariable",
+                          "inputs": {
+                            "name": "AlertsSent",
+                            "value": 1
+                          },
+                          "runAfter": {
+                            "Log_alert": [
+                              "Succeeded"
+                            ]
+                          },
+                          "metadata": {
+                            "operationMetadataId": "11111111-2222-4333-8444-555555555570"
+                          }
+                        }
+                      },
+                      "else": {
+                        "actions": {}
+                      },
+                      "runAfter": {
+                        "Check_recent_alert": [
+                          "Succeeded"
+                        ]
+                      },
+                      "metadata": {
+                        "operationMetadataId": "11111111-2222-4333-8444-555555555583"
+                      }
+                    }
+                  },
+                  "runtimeConfiguration": {
+                    "concurrency": {
+                      "repetitions": 1
+                    }
+                  },
+                  "metadata": {
+                    "operationMetadataId": "11111111-2222-4333-8444-555555555571"
+                  }
+                }
+              },
+              "else": {
+                "actions": {}
+              },
+              "runAfter": {
+                "Filter_harness_agents": [
+                  "Succeeded"
+                ]
+              },
+              "metadata": {
+                "operationMetadataId": "11111111-2222-4333-8444-555555555572"
+              }
+            },
+            "Count_harness_agents": {
+              "type": "Query",
+              "inputs": {
+                "from": "@coalesce(body('Query_agent_inventory')?['data'], json('[]'))",
+                "where": "@and(equals(toLower(item()?['environmentId']), toLower(items('For_each_environment')?['name'])), equals(item()?['isCLIAgent'], 'true'))"
+              },
+              "runAfter": {
+                "Filter_TenantPool_rule": [
+                  "Succeeded"
+                ]
+              },
+              "metadata": {
+                "operationMetadataId": "11111111-2222-4333-8444-555555555580"
+              }
+            }
+          },
+          "runAfter": {
+            "Query_agent_inventory": [
+              "Succeeded"
+            ]
+          },
+          "runtimeConfiguration": {
+            "concurrency": {
+              "repetitions": 1
+            }
+          },
+          "metadata": {
+            "operationMetadataId": "11111111-2222-4333-8444-555555555573"
+          }
+        }
+      },
+      "outputs": {}
+    },
+    "templateName": null
+  },
+  "schemaVersion": "1.0.0.0"
+}
