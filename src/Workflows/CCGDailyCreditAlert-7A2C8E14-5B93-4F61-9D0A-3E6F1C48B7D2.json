@@ -58,6 +58,14 @@
         "$connections": {
           "defaultValue": {},
           "type": "Object"
+        },
+        "ccg_AdminRecipients": {
+          "defaultValue": "",
+          "type": "String",
+          "metadata": {
+            "schemaName": "ccg_AdminRecipients",
+            "description": "Semicolon-separated admin email addresses that receive alerts about environments with no credit cap. Bound to the ccg_AdminRecipients environment variable."
+          }
         }
       },
       "triggers": {
@@ -419,6 +427,57 @@
               },
               "metadata": {
                 "operationMetadataId": "11111111-2222-4333-8444-555555555580"
+              }
+            },
+            "If_environment_uncapped": {
+              "type": "If",
+              "expression": {
+                "or": [
+                  {
+                    "lessOrEquals": [
+                      "@float(coalesce(first(body('Filter_MCSMessages'))?['entitlement']?['capacity']?['allocated']?['value'], 0))",
+                      0
+                    ]
+                  },
+                  {
+                    "greater": [
+                      "@length(body('Filter_TenantPool_rule'))",
+                      0
+                    ]
+                  }
+                ]
+              },
+              "actions": {
+                "Send_admin_email_uncapped": {
+                  "type": "OpenApiConnection",
+                  "inputs": {
+                    "parameters": {
+                      "emailMessage/To": "@parameters('ccg_AdminRecipients')",
+                      "emailMessage/Subject": "@{concat('Copilot credits: ', items('For_each_environment')?['properties']?['displayName'], ' has no credit cap')}",
+                      "emailMessage/Body": "@{concat('<div style=\"font-family:Segoe UI,Arial,sans-serif;font-size:14px;color:#1f2328;max-width:560px\">','<p style=\"margin:0 0 16px\">This environment has no credit cap of its own. It can draw Copilot credits from the whole tenant with no ceiling, which is how a single environment can spend the entire tenant before anyone notices.</p>','<table style=\"border-collapse:collapse;margin:0 0 16px;width:100%\">','<tr><td style=\"padding:6px 12px 6px 0;color:#5a5a5a;white-space:nowrap\">Environment</td><td style=\"padding:6px 0;font-weight:600\">', items('For_each_environment')?['properties']?['displayName'], '</td></tr>','<tr><td style=\"padding:6px 12px 6px 0;color:#5a5a5a\">Allocated</td><td style=\"padding:6px 0;font-weight:600\">', if(greater(float(coalesce(first(body('Filter_MCSMessages'))?['entitlement']?['capacity']?['allocated']?['value'], 0)), 0), formatNumber(float(coalesce(first(body('Filter_MCSMessages'))?['entitlement']?['capacity']?['allocated']?['value'], 0)), '0.##'), 'none'), '</td></tr>','<tr><td style=\"padding:6px 12px 6px 0;color:#5a5a5a\">Tenant-pool draw</td><td style=\"padding:6px 0;font-weight:600\">', if(greater(length(body('Filter_TenantPool_rule')), 0), 'on', 'off'), '</td></tr>','<tr><td style=\"padding:6px 12px 6px 0;color:#5a5a5a\">Credits used</td><td style=\"padding:6px 0;font-weight:600\">', formatNumber(float(coalesce(first(body('Filter_MCSMessages'))?['entitlement']?['capacity']?['consumed']?['value'], 0)), '0.##'), '</td></tr>','<tr><td style=\"padding:6px 12px 6px 0;color:#5a5a5a\">Harness agents here</td><td style=\"padding:6px 0;font-weight:600\">', string(length(body('Count_harness_agents'))), '</td></tr>','</table>','<p style=\"margin:0 0 16px;padding:12px 14px;background:#fdf6ec;border-left:3px solid #c9a227\"><b>What to do:</b> set a credit allocation on this environment and turn off the tenant-pool draw, so it stops at its own allocation instead of the tenant pool. In the admin center: Licensing, Products, Copilot Studio, Manage Copilot Credits.</p>','<p style=\"margin:0;color:#8a8a8a;font-size:12px\">You receive this as a Copilot credit governance administrator. Set the cap in time and this environment cannot take the tenant down with it.</p>','</div>')}",
+                      "emailMessage/Importance": "Normal"
+                    },
+                    "host": {
+                      "apiId": "/providers/Microsoft.PowerApps/apis/shared_office365",
+                      "operationId": "SendEmailV2",
+                      "connectionName": "shared_office365-1"
+                    }
+                  },
+                  "metadata": {
+                    "operationMetadataId": "11111111-2222-4333-8444-5555555555a0"
+                  }
+                }
+              },
+              "else": {
+                "actions": {}
+              },
+              "runAfter": {
+                "Count_harness_agents": [
+                  "Succeeded"
+                ]
+              },
+              "metadata": {
+                "operationMetadataId": "11111111-2222-4333-8444-5555555555a1"
               }
             }
           },
