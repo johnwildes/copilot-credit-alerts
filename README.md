@@ -32,7 +32,9 @@ Once a day:
 2. Query the inventory once for every Copilot Studio agent, with owner and harness flag
 3. For each environment, read its Copilot credit position
 4. If the environment is at risk, email the owner of each GitHub Copilot harness agent in it
-5. Write a row to an alert log table
+5. Collect every environment that has no credit cap of its own, and send administrators one
+   digest listing them
+6. Write a row to an alert log table
 
 ## When it alerts
 
@@ -49,6 +51,17 @@ have fired on it.
 
 Owners are not reminded about the same agent more than once every seven days.
 
+Administrators are told about environments with no credit cap of their own, which the
+built-in notifications cannot report at all: an overage warning needs an allocation to
+measure against, and enforcement only fires at 125 % tenant-wide, after the damage, without
+naming the environment that caused it.
+
+That alert is one digest per run listing every uncapped environment, not one email per
+environment, and an environment is muted for seven days once it has appeared in a digest.
+A tenant with thirty uncapped environments therefore produces one email, not thirty a day.
+An environment that appears without a cap inside those seven days is not muted: it has no
+log row yet, so it goes into the next run's digest and the digest is sent.
+
 ## The alert log
 
 One row per alert, not one row per day. The table answers the question the built-in
@@ -64,6 +77,11 @@ notification leaves open: **who owns this, and have they been told.**
 | Allocated, Consumed, Percent used | the numbers at the time |
 | Tenant pool enabled | whether the environment can draw from shared capacity |
 | Harness agents in environment | how many owners were notified for the same event |
+
+Environment-level rows, written when administrators are told about a missing cap, carry
+`uncapped-environment` as the agent ID and `false` in Owner notified. They are what the
+seven-day mute is measured against, and they are how you see when an environment was last
+reported.
 
 An administrator who receives the built-in Microsoft alert can look here and find the owner.
 

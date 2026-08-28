@@ -119,7 +119,7 @@
             }
           },
           "runAfter": {
-            "Initialise_alert_count": [
+            "Initialise_uncapped_rows": [
               "Succeeded"
             ]
           },
@@ -448,23 +448,80 @@
                 ]
               },
               "actions": {
-                "Send_admin_email_uncapped": {
+                "Check_recent_admin_alert": {
                   "type": "OpenApiConnection",
                   "inputs": {
                     "parameters": {
-                      "emailMessage/To": "@parameters('ccg_AdminRecipients')",
-                      "emailMessage/Subject": "@{concat('Copilot credits: ', items('For_each_environment')?['properties']?['displayName'], ' has no credit cap')}",
-                      "emailMessage/Body": "@{concat('<div style=\"font-family:Segoe UI,Arial,sans-serif;font-size:14px;color:#1f2328;max-width:560px\">','<p style=\"margin:0 0 16px\">This environment has no credit cap of its own. It can draw Copilot credits from the whole tenant with no ceiling, which is how a single environment can spend the entire tenant before anyone notices.</p>','<table style=\"border-collapse:collapse;margin:0 0 16px;width:100%\">','<tr><td style=\"padding:6px 12px 6px 0;color:#5a5a5a;white-space:nowrap\">Environment</td><td style=\"padding:6px 0;font-weight:600\">', items('For_each_environment')?['properties']?['displayName'], '</td></tr>','<tr><td style=\"padding:6px 12px 6px 0;color:#5a5a5a\">Allocated</td><td style=\"padding:6px 0;font-weight:600\">', if(greater(float(coalesce(first(body('Filter_MCSMessages'))?['entitlement']?['capacity']?['allocated']?['value'], 0)), 0), formatNumber(float(coalesce(first(body('Filter_MCSMessages'))?['entitlement']?['capacity']?['allocated']?['value'], 0)), '0.##'), 'none'), '</td></tr>','<tr><td style=\"padding:6px 12px 6px 0;color:#5a5a5a\">Tenant-pool draw</td><td style=\"padding:6px 0;font-weight:600\">', if(greater(length(body('Filter_TenantPool_rule')), 0), 'on', 'off'), '</td></tr>','<tr><td style=\"padding:6px 12px 6px 0;color:#5a5a5a\">Credits used</td><td style=\"padding:6px 0;font-weight:600\">', formatNumber(float(coalesce(first(body('Filter_MCSMessages'))?['entitlement']?['capacity']?['consumed']?['value'], 0)), '0.##'), '</td></tr>','<tr><td style=\"padding:6px 12px 6px 0;color:#5a5a5a\">Harness agents here</td><td style=\"padding:6px 0;font-weight:600\">', string(length(body('Count_harness_agents'))), '</td></tr>','</table>','<p style=\"margin:0 0 16px;padding:12px 14px;background:#fdf6ec;border-left:3px solid #c9a227\"><b>What to do:</b> set a credit allocation on this environment and turn off the tenant-pool draw, so it stops at its own allocation instead of the tenant pool. In the admin center: Licensing, Products, Copilot Studio, Manage Copilot Credits.</p>','<p style=\"margin:0;color:#8a8a8a;font-size:12px\">You receive this as a Copilot credit governance administrator. Set the cap in time and this environment cannot take the tenant down with it.</p>','</div>')}",
-                      "emailMessage/Importance": "Normal"
+                      "entityName": "ccg_creditalerts",
+                      "$filter": "@{concat('ccg_agentid eq ''uncapped-environment'' and ccg_environmentid eq ''', items('For_each_environment')?['name'], ''' and ccg_alertdate gt ', formatDateTime(addDays(utcNow(), -7), 'yyyy-MM-ddTHH:mm:ssZ'))}",
+                      "$top": 1
                     },
                     "host": {
-                      "apiId": "/providers/Microsoft.PowerApps/apis/shared_office365",
-                      "operationId": "SendEmailV2",
-                      "connectionName": "shared_office365-1"
+                      "apiId": "/providers/Microsoft.PowerApps/apis/shared_commondataserviceforapps",
+                      "operationId": "ListRecords",
+                      "connectionName": "shared_commondataserviceforapps-1"
                     }
                   },
+                  "runAfter": {},
                   "metadata": {
-                    "operationMetadataId": "11111111-2222-4333-8444-5555555555a0"
+                    "operationMetadataId": "11111111-2222-4333-8444-5555555555b1"
+                  }
+                },
+                "If_admin_not_alerted_recently": {
+                  "type": "If",
+                  "expression": {
+                    "equals": [
+                      "@length(body('Check_recent_admin_alert')?['value'])",
+                      0
+                    ]
+                  },
+                  "actions": {
+                    "Append_uncapped_environment": {
+                      "type": "AppendToArrayVariable",
+                      "inputs": {
+                        "name": "UncappedEnvironments",
+                        "value": {
+                          "name": "@items('For_each_environment')?['properties']?['displayName']",
+                          "id": "@items('For_each_environment')?['name']",
+                          "consumed": "@float(coalesce(first(body('Filter_MCSMessages'))?['entitlement']?['capacity']?['consumed']?['value'], 0))",
+                          "allocated": "@float(coalesce(first(body('Filter_MCSMessages'))?['entitlement']?['capacity']?['allocated']?['value'], 0))",
+                          "percentUsed": "@float(div(mul(float(coalesce(first(body('Filter_MCSMessages'))?['entitlement']?['capacity']?['consumed']?['value'], 0)), 100), max(float(coalesce(first(body('Filter_MCSMessages'))?['entitlement']?['capacity']?['allocated']?['value'], 0)), 1)))",
+                          "harnessAgents": "@length(body('Count_harness_agents'))",
+                          "tenantPool": "@greater(length(body('Filter_TenantPool_rule')), 0)",
+                          "consumedText": "@formatNumber(float(coalesce(first(body('Filter_MCSMessages'))?['entitlement']?['capacity']?['consumed']?['value'], 0)), '0.##')",
+                          "allocatedText": "@if(greater(float(coalesce(first(body('Filter_MCSMessages'))?['entitlement']?['capacity']?['allocated']?['value'], 0)), 0), formatNumber(float(coalesce(first(body('Filter_MCSMessages'))?['entitlement']?['capacity']?['allocated']?['value'], 0)), '0.##'), 'none')",
+                          "tenantPoolText": "@if(greater(length(body('Filter_TenantPool_rule')), 0), 'on', 'off')",
+                          "harnessAgentsText": "@string(length(body('Count_harness_agents')))"
+                        }
+                      },
+                      "runAfter": {},
+                      "metadata": {
+                        "operationMetadataId": "11111111-2222-4333-8444-5555555555b2"
+                      }
+                    },
+                    "Append_uncapped_row": {
+                      "type": "AppendToArrayVariable",
+                      "inputs": {
+                        "name": "UncappedRows",
+                        "value": "@concat('<tr><td style=\"padding:6px 12px 6px 0;border-top:1px solid #e6e6e6\">', items('For_each_environment')?['properties']?['displayName'], '</td><td style=\"padding:6px 12px 6px 0;border-top:1px solid #e6e6e6\">', formatNumber(float(coalesce(first(body('Filter_MCSMessages'))?['entitlement']?['capacity']?['consumed']?['value'], 0)), '0.##'), '</td><td style=\"padding:6px 12px 6px 0;border-top:1px solid #e6e6e6\">', if(greater(length(body('Filter_TenantPool_rule')), 0), 'on', 'off'), '</td><td style=\"padding:6px 0;border-top:1px solid #e6e6e6\">', string(length(body('Count_harness_agents'))), '</td></tr>')"
+                      },
+                      "runAfter": {
+                        "Append_uncapped_environment": [
+                          "Succeeded"
+                        ]
+                      },
+                      "metadata": {
+                        "operationMetadataId": "11111111-2222-4333-8444-5555555555b9"
+                      }
+                    }
+                  },
+                  "runAfter": {
+                    "Check_recent_admin_alert": [
+                      "Succeeded"
+                    ]
+                  },
+                  "metadata": {
+                    "operationMetadataId": "11111111-2222-4333-8444-5555555555b3"
                   }
                 }
               },
@@ -493,6 +550,134 @@
           },
           "metadata": {
             "operationMetadataId": "11111111-2222-4333-8444-555555555573"
+          }
+        },
+        "Initialise_uncapped_list": {
+          "type": "InitializeVariable",
+          "inputs": {
+            "variables": [
+              {
+                "name": "UncappedEnvironments",
+                "type": "array",
+                "value": []
+              }
+            ]
+          },
+          "runAfter": {
+            "Initialise_alert_count": [
+              "Succeeded"
+            ]
+          },
+          "metadata": {
+            "operationMetadataId": "11111111-2222-4333-8444-5555555555b0"
+          }
+        },
+        "If_any_uncapped": {
+          "type": "If",
+          "expression": {
+            "greater": [
+              "@length(variables('UncappedEnvironments'))",
+              0
+            ]
+          },
+          "actions": {
+            "Send_admin_digest_uncapped": {
+              "type": "OpenApiConnection",
+              "inputs": {
+                "parameters": {
+                  "emailMessage/To": "@parameters('ccg_AdminRecipients')",
+                  "emailMessage/Subject": "@{concat('Copilot credits: ', string(length(variables('UncappedEnvironments'))), ' environment(s) with no credit cap')}",
+                  "emailMessage/Body": "@{concat('<div style=\"font-family:Segoe UI,Arial,sans-serif;font-size:14px;color:#1f2328;max-width:640px\">','<p style=\"margin:0 0 16px\">', string(length(variables('UncappedEnvironments'))), ' environment(s) have no credit cap of their own. Each one can draw Copilot credits from the whole tenant with no ceiling, which is how a single environment can spend the entire tenant before anyone notices.</p>','<table style=\"border-collapse:collapse;width:100%;margin:0 0 16px\">','<tr><th align=\"left\" style=\"padding:6px 12px 6px 0;color:#5a5a5a;font-weight:600\">Environment</th>','<th align=\"left\" style=\"padding:6px 12px 6px 0;color:#5a5a5a;font-weight:600\">Credits used</th>','<th align=\"left\" style=\"padding:6px 12px 6px 0;color:#5a5a5a;font-weight:600\">Tenant-pool draw</th>','<th align=\"left\" style=\"padding:6px 0;color:#5a5a5a;font-weight:600\">Harness agents</th></tr>',join(variables('UncappedRows'), ''),'</table>','<p style=\"margin:0 0 16px\">Set a credit allocation for each environment and switch off the tenant-pool draw. Until you do, no per-environment warning exists: the built-in overage notification needs an allocation to measure against, and enforcement only fires at 125 % tenant-wide, after the damage.</p>','<p style=\"margin:0;color:#5a5a5a;font-size:12px\">These environments are muted for 7 days. An environment that appears without a cap before then is reported on the next run.</p>','</div>')}",
+                  "emailMessage/Importance": "Normal"
+                },
+                "host": {
+                  "apiId": "/providers/Microsoft.PowerApps/apis/shared_office365",
+                  "operationId": "SendEmailV2",
+                  "connectionName": "shared_office365-1"
+                }
+              },
+              "runAfter": {},
+              "metadata": {
+                "operationMetadataId": "11111111-2222-4333-8444-5555555555b4"
+              }
+            },
+            "For_each_uncapped_logged": {
+              "type": "Foreach",
+              "foreach": "@variables('UncappedEnvironments')",
+              "actions": {
+                "Log_admin_alert": {
+                  "type": "OpenApiConnection",
+                  "inputs": {
+                    "parameters": {
+                      "entityName": "ccg_creditalerts",
+                      "item/ccg_agentid": "uncapped-environment",
+                      "item/ccg_agentname": "(environment-level alert)",
+                      "item/ccg_name": "@{concat(item()?['name'], ' | no cap | ', formatDateTime(utcNow(),'yyyy-MM-dd'))}",
+                      "item/ccg_alertdate": "@utcNow()",
+                      "item/ccg_environmentname": "@item()?['name']",
+                      "item/ccg_environmentid": "@item()?['id']",
+                      "item/ccg_allocatedcredits": "@float(item()?['allocated'])",
+                      "item/ccg_consumedcredits": "@float(item()?['consumed'])",
+                      "item/ccg_percentused": "@float(item()?['percentUsed'])",
+                      "item/ccg_harnessagents": "@item()?['harnessAgents']",
+                      "item/ccg_tenantpool": "@item()?['tenantPool']",
+                      "item/ccg_owneremail": "@parameters('ccg_AdminRecipients')",
+                      "item/ccg_ownernotified": false
+                    },
+                    "host": {
+                      "apiId": "/providers/Microsoft.PowerApps/apis/shared_commondataserviceforapps",
+                      "operationId": "CreateRecord",
+                      "connectionName": "shared_commondataserviceforapps-1"
+                    }
+                  },
+                  "runAfter": {},
+                  "metadata": {
+                    "operationMetadataId": "11111111-2222-4333-8444-5555555555b5"
+                  }
+                }
+              },
+              "runAfter": {
+                "Send_admin_digest_uncapped": [
+                  "Succeeded"
+                ]
+              },
+              "runtimeConfiguration": {
+                "concurrency": {
+                  "repetitions": 1
+                }
+              },
+              "metadata": {
+                "operationMetadataId": "11111111-2222-4333-8444-5555555555b6"
+              }
+            }
+          },
+          "runAfter": {
+            "For_each_environment": [
+              "Succeeded"
+            ]
+          },
+          "metadata": {
+            "operationMetadataId": "11111111-2222-4333-8444-5555555555b7"
+          }
+        },
+        "Initialise_uncapped_rows": {
+          "type": "InitializeVariable",
+          "inputs": {
+            "variables": [
+              {
+                "name": "UncappedRows",
+                "type": "array",
+                "value": []
+              }
+            ]
+          },
+          "runAfter": {
+            "Initialise_uncapped_list": [
+              "Succeeded"
+            ]
+          },
+          "metadata": {
+            "operationMetadataId": "11111111-2222-4333-8444-5555555555b8"
           }
         }
       },
